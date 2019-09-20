@@ -29,13 +29,12 @@ class Scraping_page:
             os.mkdir(f'{self.dir_name}/{race_num}')
         f_name = f'{self.dir_name}/{race_num}/{race_num}.html'
         #ページ保存部
-        self.craw_init(url,f_name)
+        self.craw_page(url,f_name)
         ##個人成績取得
         with open(f_name,'r') as html:
             soup = BeautifulSoup(html, "html.parser")
             racer_n = 1
             for boat_number in soup.select('div[class="is-fs11"]'):     #divのis-fs11完全一致のみセレクト
-                f_racer = f'{self.dir_name}/{race_num}/boat_{racer_n}.html'
                 boat_number = re.sub('[ /]','',boat_number.text)    #textにして空白と/を除外
                 boat_number = boat_number.split('\n')   #\nで区切ってリスト化
                 for b_n in boat_number:     #改行＋番号＋階級と出るから番号のみ取得
@@ -48,9 +47,14 @@ class Scraping_page:
                     nothing = 1 #ここまできた==無い
                 if nothing:     #同タグで出身＋年齢もあるのでその場合はスキップ
                     continue
-                url_recer = f"http://www.boatrace-db.net/racer/yresult/regno/{b_num}/year/2019/"  #選手情報（期別から検索
-                self.craw_init(url_recer,f_racer)   #クローリング
-                time.sleep(2.5) #時間を開けないとダメだってさ
+                urls = [ f"http://www.boatrace-db.net/racer/yresult/regno/{b_num}/year/2019/",  #今期選手情報（期別から検索
+                    f'http://www.boatrace-db.net/racer/aresult/regno/{b_num}/',   #通算成績
+                    f'http://www.boatrace-db.net/racer/rdemo/regno/{b_num}/']    #スタート順位と成績
+                d_n = ['2019','all','pre-times']
+                for i in range(len(urls)):
+                    f_racer = f'{self.dir_name}/{race_num}/boat{racer_n}_{d_n[i]}.html'
+                    self.craw_page(urls[i],f_racer)   #クローリング
+                    time.sleep(2) #時間を開けないとダメだってさ
                 print(f'Get {race_num}-{racer_n}st')
                 racer_n += 1
             if racer_n == 1:    #レーサー取得できなかった場合
@@ -61,17 +65,19 @@ class Scraping_page:
             #ページ遷移
             pages += 1
             if pages > 12:
-                pages = self.page
                 return None
+            self.page = pages
+            """
             elif pages > 9:
                 tmp_url = url[-19:] #レース番号以降を保持
                 url = url[:-1] + str(pages) + tmp_url
             else:
                 tmp_url = url[-19:] #レース番号以降を保持
                 url = url[:-2] + str(pages) + tmp_url
+            """
         self.crawling()
 
-    def craw_init(self,url,f_name):
+    def craw_page(self,url,f_name):
         headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) \
         AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}
         response = requests.get(url,headers=headers)
@@ -84,31 +90,36 @@ class Scraping_page:
         tag_select = ['odd','even']    #奇数タグと偶数タグ
         round_lambda = lambda x:int((x*2+1)//2) #偶数丸め込みだと0.5を0にするため
         meet = round_lambda(int(self.selects)/2)    #何番目か
+        d_n = ['2019','all','pre-times']
         if int(self.selects) % 2:
             tag = tag_select[0] #割り切れないので奇数
         else:
             tag = tag_select[1] #割り切れるので偶数
-
         for racer in range(1,7):
-            dir_p = f"{self.dir_name}/{race}R/boat_{racer}.html"
-            with open(dir_p,'r') as html:
-                soup = BeautifulSoup(html, "html.parser") 
-                for cnt in range(6):    #名前と成績を取得
-                    if cnt==5:  #福岡勝率だけ抜き出す
-                        j = 1
-                        tmp_cls = soup.find(class_=self.scrape_cls[cnt])
-                        strings = tmp_cls.find(class_='header').text
-                        for b in tmp_cls.find_all(class_=tag):   #タグが奇数偶数で分かれてる
-                            if j==meet:
-                                b = b.text
-                                strings = strings + b
-                                res.append(self.shaping(strings))
-                                j += 1
-                            else:
-                                j += 1
-                    else:
-                        strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
+            for j in range(3):
+                dir_p = f"{self.dir_name}/{race}R/boat{racer}_{d_n[j]}.html"
+                with open(dir_p,'r') as html:
+                    soup = BeautifulSoup(html, "html.parser")
+                    if j==2:    #最後のみ異なる
+                        tmp_cls = soup.find(class_='rdemo').text
                         res.append(self.shaping(strings))
+                        continue
+                    for cnt in range(6):    #名前と成績を取得
+                        if cnt==5:  #福岡勝率だけ抜き出す
+                            j = 1
+                            tmp_cls = soup.find(class_=self.scrape_cls[cnt])
+                            strings = tmp_cls.find(class_='header').text
+                            for b in tmp_cls.find_all(class_=tag):   #タグが奇数偶数で分かれてる
+                                if j==meet:
+                                    b = b.text
+                                    strings = strings + b
+                                    res.append(self.shaping(strings))
+                                    j += 1
+                                else:
+                                    j += 1
+                        else:   #クラス名ずつにスクレイプ
+                            strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
+                            res.append(self.shaping(strings))
 
         return res
 
@@ -239,15 +250,6 @@ if __name__ == "__main__":
 
     #ws = wb.get_sheet_by_name('SHEETNAME') #SHEETNAMEを検索して指定
 
-    #進入コース boat_course
-    # コースリザ    course_result
-    # 決まり手  course_winning_tech
-    #開催場の勝率　pool_result even (11ばんめが福岡)
-    #http://www.boatrace-db.net/racer/yresult/regno/4444/year/2019/     各選手 期別と年指定
-    #http://www.boatrace-db.net/race/index/      ホーム　当日開催分表示or過去分検索
-    #http://www.boatrace-db.net/race/races/date/20190901/pid/22/        日付と福岡22で当日のレース情報
-    #http://www.boatrace-db.net/race/detail/date/20190901/pid/22/rno/01/    日付、開催番号、レース番号
-
     #http://www.boatrace-db.net/stadium/motor/pid/22/   モータ勝率  下記のトップ
     #http://www.boatrace-db.net/stadium/boat/pid/22/    ボート
     #http://www.boatrace-db.net/stadium/tcourse/pid/22/     コース別総合
@@ -256,11 +258,11 @@ if __name__ == "__main__":
     #http://www.boatrace-db.net/stadium/demo/pid/22/        展示タイム別
 #ボートレース公式サイト
     #https://www.boatrace.jp/owpc/pc/extra/data/download.html   公式の選手成績
-    #https://www.boatrace.jp/owpc/pc/race/racelist?rno=1&jcd=22&hd=20190916     rno=レースnum,jcd=開催状,hd=年日
+    #https://www.boatrace.jp/owpc/pc/data/stadium?jcd=22&hd=20190920    場データ jcd=開催状,hd=年日
     # https://www.boatrace.jp/owpc/pc/race/index?hd=20190916    レース一覧
     #https://www.boatrace-fukuoka.com/modules/datafile/?page=index_mrankdtl&kind=1&type=1   福岡モータ成績
     #https://www.boatrace-fukuoka.com/modules/datafile/?page=index_tanpyou  選手別戦評（多分当節のみ
-    #
+    #https://www.boatrace.jp/owpc/pc/race/pcexpect?rno=1&jcd=22&hd=20190916     予想
 
     '''
     レース場	場コード
