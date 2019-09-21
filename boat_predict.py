@@ -67,14 +67,7 @@ class Scraping_page:
             if pages > 12:
                 return None
             self.page = pages
-            """
-            elif pages > 9:
-                tmp_url = url[-19:] #レース番号以降を保持
-                url = url[:-1] + str(pages) + tmp_url
-            else:
-                tmp_url = url[-19:] #レース番号以降を保持
-                url = url[:-2] + str(pages) + tmp_url
-            """
+
         self.crawling()
 
     def craw_page(self,url,f_name):
@@ -96,30 +89,31 @@ class Scraping_page:
         else:
             tag = tag_select[1] #割り切れるので偶数
         for racer in range(1,7):
-            for j in range(3):
+            for j in range(len(d_n)):
                 dir_p = f"{self.dir_name}/{race}R/boat{racer}_{d_n[j]}.html"
                 with open(dir_p,'r') as html:
                     soup = BeautifulSoup(html, "html.parser")
-                    if j==2:    #最後のみ異なる
-                        tmp_cls = soup.find(class_='rdemo').text
-                        res.append(self.shaping(strings))
-                        continue
-                    for cnt in range(6):    #名前と成績を取得
-                        if cnt==5:  #福岡勝率だけ抜き出す
-                            j = 1
-                            tmp_cls = soup.find(class_=self.scrape_cls[cnt])
-                            strings = tmp_cls.find(class_='header').text
-                            for b in tmp_cls.find_all(class_=tag):   #タグが奇数偶数で分かれてる
-                                if j==meet:
-                                    b = b.text
-                                    strings = strings + b
-                                    res.append(self.shaping(strings))
-                                    j += 1
-                                else:
-                                    j += 1
-                        else:   #クラス名ずつにスクレイプ
-                            strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
-                            res.append(self.shaping(strings))
+                    if d_n[j]=='pre-times':    #'pre-times'のみ異なる
+                        #time_res = soup.find(class_='rdemo').text
+                        #res.append(self.shaping(time_res))
+                        pass
+                    else:
+                        for cnt in range(6):    #名前と成績を取得
+                            if cnt==5:  #福岡勝率だけ抜き出す
+                                j = 1
+                                tmp_cls = soup.find(class_=self.scrape_cls[cnt])
+                                strings = tmp_cls.find(class_='header').text
+                                for txt in tmp_cls.find_all(class_=tag):   #タグが奇数偶数で分かれてる
+                                    if j==meet:
+                                        txt = txt.text
+                                        strings = strings + txt
+                                        res.append(self.shaping(strings))
+                                        j += 1
+                                    else:
+                                        j += 1
+                            else:   #クラス名ずつにスクレイプ
+                                strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
+                                res.append(self.shaping(strings))
 
         return res
 
@@ -135,64 +129,51 @@ class Scraping_page:
 
 class Write_excel:
     def __init__(self):
-        self.vert = 2   #縦
-        self.hori1 = 2  #横1
-        self.hori2 = 2  #横2
+        self.row = 2   #縦
+        self.column = 2  #横
+        self.column_init = 2  #横初期値
         self.capa = 0   #横に２つずつ書くため
-        self.alph = list(stg.ascii_uppercase)    #ABCのリスト
+        self.width = 0
 
     def write_xl(self,data,xls):
         if len(data) == 1:  #レーサー氏名入力
-            al = self.alph[0]   #氏名は必ず'A'のためAを参照させる
             data = re.sub(r'[!-~\s+]','',data[0]) #空白文字が混ざってる時があるので除く
-            xls[f'{al}{self.vert}'].value = data    #書き込み
+            xls.cell(row=self.row,column=1,value=data) #書き込み
             self.capa = 0
         else:
-            #幅指定 基本7行(6艇+項目名)
+            size = 4   #表を何個横に置くか
+            #幅指定 基本7行(6艇+項目名)+A列あけ
             if len(data)/8 == 7:    #wid==8,leng==7
                 width = 9
             elif len(data)/9 == 7:  #wid==9,leng==7
                 width = 10
             else:   #その他
                 width = 12
-
-            if self.capa > 0:   #横２つ目の表
-                horizon = self.hori2
-                verticle = self.vert
-                width += 9  #ずらす
-            else:   #一つ目の表
-                horizon = self.hori1
-                verticle = self.vert
-
-            for d in data:  #人単語区切りのlist
-                if int(horizon/len(self.alph)):  #横軸の英字が2桁に行く場合
-                    al = f'A{self.alph[horizon-len(self.alph)]}'
-                else:
-                    al = self.alph[horizon-1]
-
+            if self.capa:
+                width += self.column-2
+            row = self.row
+            column = self.column
+            for d in data:
                 try:
                     d = int(d)  #なるだけ数字は数値に
                 except ValueError:
                     try:
                         d = float(d)    #小数値はfloatで変換
                     except ValueError:
-                        pass
-
-                xls[f'{al}{verticle}'].value = d    #書き込む
-
-                horizon += 1    #横移動
-                if horizon > width:     #移動後がwidthを超えた場合
-                    if not self.capa:
-                        self.hori2 = horizon+1    #横の最大値+2を2つ目の始点にする
-                        horizon = self.hori1    #hori初期化
-                    else:
-                        horizon = self.hori2    #horiを2つ目で初期化
-                    verticle += 1
-                ###for_end###
-            if self.capa or width==12:  #２つ目の表後かその他の後か
-                self.vert = verticle+2     #表と表の間を1行開ける
-
-            self.capa=0 if bool(self.capa) else 1   #表は2個ずつ書くのでcapaの0or1を入れ変え
+                        pass               
+                xls.cell(row=row,column=column,value=d) #書き込み
+                if column==width:
+                    row+=1
+                    column = self.column
+                else:
+                    column+=1
+            if self.capa == size:
+                self.row += 8
+                self.column = self.column_init
+                self.capa = 0
+            else:
+                self.column = width + 2
+                self.capa += 1
             ###else_end###
         return xls
 
@@ -231,10 +212,12 @@ if __name__ == "__main__":
         xs['A1'].value = f'【福岡 {rn}R】'
         for data in scrape.scrap_racer(rn):
             xs = excel.write_xl(data,xs)
+        print(f"Page-{rn} completed.")
     #表の枠線つけ部
     side = Side(style='thin', color='000000')
     border = Border(top=side, bottom=side, left=side, right=side)
     all_sheet = xl.worksheets
+    pass_A = re.compile(r'A[0-9]')   #A列のみ省きたいので
     for sheet in all_sheet: #シートごとに枠線付け
         for row in sheet:
             for cell in row:    #セルごとに回す
@@ -242,7 +225,7 @@ if __name__ == "__main__":
                     cell.alignment = Alignment(horizontal = 'center',   #全てを中央揃えに
                                 vertical = 'center',
                                 wrap_text = False)
-                    if 'A' in cell.coordinate:  #A行には枠線をつけない
+                    if pass_A.match(cell.coordinate):  #A行には枠線をつけない
                         continue
                     sheet[cell.coordinate].border = border  #枠線つけ
     
