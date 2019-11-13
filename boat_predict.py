@@ -83,7 +83,7 @@ class Scraping_page:
         tag_select = ['odd','even']    #奇数タグと偶数タグ
         round_lambda = lambda x:int((x*2+1)//2) #偶数丸め込みだと0.5を0にするため
         meet = round_lambda(int(self.selects)/2)    #何番目か
-        d_n = ['2019','all','pre-times']
+        d_n = ['2019','pre-times','all']
         if int(self.selects) % 2:
             tag = tag_select[0] #割り切れないので奇数
         else:
@@ -94,9 +94,8 @@ class Scraping_page:
                 with open(dir_p,'r') as html:
                     soup = BeautifulSoup(html, "html.parser")
                     if d_n[j]=='pre-times':    #'pre-times'のみ異なる
-                        #time_res = soup.find(class_='rdemo').text
-                        #res.append(self.shaping(time_res))
-                        pass
+                        time_res = soup.find(class_='rdemo').text
+                        res.append(self.shaping(time_res))
                     else:
                         for cnt in range(6):    #名前と成績を取得
                             if cnt==5:  #福岡勝率だけ抜き出す
@@ -127,19 +126,31 @@ class Scraping_page:
         return tmp_res
 
 
-class Write_excel:
+class Excel:
     def __init__(self):
         self.row = 2   #縦
         self.column = 2  #横
         self.column_init = 2  #横初期値
         self.capa = 0   #横に２つずつ書くため
         self.width = 0
+        self.title = ['【通算成績】','【2019成績】']
+        self.count = 0
 
     def write_xl(self,data,xls):
         if len(data) == 1:  #レーサー氏名入力
+            if self.count:
+                self.row += 8
+
+            self.column = self.column_init
+            self.capa = 0
             data = re.sub(r'[!-~\s+]','',data[0]) #空白文字が混ざってる時があるので除く
             xls.cell(row=self.row,column=1,value=data) #書き込み
-            self.capa = 0
+            if not self.count:
+                xls.cell(row=self.row+1,column=1,value=self.title[1]) #見出し2019
+            else:
+                xls.cell(row=self.row,column=1,value=self.title[0]) #見出し通算
+            self.count=0 if self.count else 1   #0-1入れ替え
+
         else:
             size = 4   #表を何個横に置くか
             #幅指定 基本7行(6艇+項目名)+A列あけ
@@ -149,10 +160,15 @@ class Write_excel:
                 width = 10
             else:   #その他
                 width = 12
+
+            if self.column-2 == 12: #前回がwidth==12の場合
+                self.column += 7
             if self.capa:
                 width += self.column-2
+
             row = self.row
             column = self.column
+
             for d in data:
                 try:
                     d = int(d)  #なるだけ数字は数値に
@@ -167,7 +183,7 @@ class Write_excel:
                     column = self.column
                 else:
                     column+=1
-            if self.capa == size:
+            if self.capa == size-1:
                 self.row += 8
                 self.column = self.column_init
                 self.capa = 0
@@ -176,6 +192,38 @@ class Write_excel:
                 self.capa += 1
             ###else_end###
         return xls
+
+    def add_frame(self,all_sheet):
+        side = Side(style='thin', color='000000')
+        border = Border(top=side, bottom=side, left=side, right=side)
+        pass_A = re.compile(r'A[0-9]')   #A列のみ省きたいので
+        for sheet in all_sheet: #シートごとに枠線付け
+            for row in sheet:
+                for cell in row:    #セルごとに回す
+                    if sheet[cell.coordinate].value != None:    #該当のセルがNone以外==何かしらある
+                        cell.alignment = Alignment(horizontal = 'center',   #全てを中央揃えに
+                                    vertical = 'center',
+                                    wrap_text = False)
+                        if pass_A.match(cell.coordinate):  #A行には枠線をつけない
+                            continue
+                        sheet[cell.coordinate].border = border  #枠線つけ
+
+    def adjust_width(self,all_sheet):
+        alph = list(stg.ascii_uppercase)
+        for sheet in all_sheet: #シートごとに
+            for col in sheet.columns:
+                max_length = 0
+                column = col[0].column
+                for cell in col:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                adjust = (max_length + 2) * 1.2
+                if column > 26:
+                    calc = int(column/27)
+                    col_alph = f'{alph[calc]}{alph[column-(calc*column)-1]}'
+                else:
+                    col_alph = f'{alph[column-1]}'
+                sheet.column_dimensions[col_alph].width = adjust
 
 if __name__ == "__main__":
     place = sys.argv[1]
@@ -205,7 +253,7 @@ if __name__ == "__main__":
     xl.remove(xl.worksheets[0]) #空のsheet1を削除(元からつくりたくないけど)
 
     for rn in range(race_number,13):
-        excel = Write_excel() #ページ毎に初期化
+        excel = Excel() #ページ毎に初期化
         xs = xl.active
         xs = xl[f'{rn}R']    #シート指定
         #xs.title = f'{rn}R'  #シート名変更
@@ -213,23 +261,12 @@ if __name__ == "__main__":
         for data in scrape.scrap_racer(rn):
             xs = excel.write_xl(data,xs)
         print(f"Page-{rn} completed.")
-    #表の枠線つけ部
-    side = Side(style='thin', color='000000')
-    border = Border(top=side, bottom=side, left=side, right=side)
-    all_sheet = xl.worksheets
-    pass_A = re.compile(r'A[0-9]')   #A列のみ省きたいので
-    for sheet in all_sheet: #シートごとに枠線付け
-        for row in sheet:
-            for cell in row:    #セルごとに回す
-                if sheet[cell.coordinate].value != None:    #該当のセルがNone以外==何かしらある
-                    cell.alignment = Alignment(horizontal = 'center',   #全てを中央揃えに
-                                vertical = 'center',
-                                wrap_text = False)
-                    if pass_A.match(cell.coordinate):  #A行には枠線をつけない
-                        continue
-                    sheet[cell.coordinate].border = border  #枠線つけ
     
+    excel.add_frame(xl.worksheets)  #表の枠線つけ部
+    excel.adjust_width(xl.worksheets)
+
     xl.save(f"/Users/sak1361/repository/boat_race/{day}.xlsx")   #保存
+    print(f'.xlsx file saved~\n/Users/sak1361/repository/boat_race/{day}.xlsx')
 
     #ws = wb.get_sheet_by_name('SHEETNAME') #SHEETNAMEを検索して指定
 
