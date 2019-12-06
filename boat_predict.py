@@ -111,7 +111,13 @@ class Scraping_page:
                                     else:
                                         j += 1
                             else:   #クラス名ずつにスクレイプ
-                                strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
+                                tmp_cls = soup.find(class_=self.scrape_cls[cnt])
+                                if tmp_cls == None:
+                                    strings = soup.find(class_='side_title').text  #racer_nameクラスがない場合
+                                    if strings == None:
+                                        strings = f'{cnt}号艇'
+                                else:
+                                    strings = soup.find(class_=self.scrape_cls[cnt]).text  #タグが入るのでtext
                                 res.append(self.shaping(strings))
 
         return res
@@ -228,13 +234,14 @@ class Excel:
 if __name__ == "__main__":
     place = sys.argv[1]
     day = sys.argv[2]
-    race_number = int(sys.argv[3])
+    race_number_start = int(sys.argv[3])
+    race_number_end = int(sys.argv[4])
     exist = False
     if not os.path.exists('fukuoka_'+day):  #dir作成
         os.mkdir('fukuoka_'+day)
     else:
         exist = True
-    scrape = Scraping_page(place,int(day),race_number)    #引数に場所,日,レース番号(8なら8レースから)
+    scrape = Scraping_page(place,int(day),race_number_start)    #引数に場所,日,レース番号(8なら8レースから)
     if exist:
         cho = int(input('directry is exist.crawling again?(0 or 1):') )
         if cho:
@@ -248,11 +255,10 @@ if __name__ == "__main__":
 
     print('Start scraping and write Excel')
     xl = opxl.Workbook()   #新規作成
-    for _i in range(race_number,13):
+    for _i in range(race_number_start,race_number_end+1):
         xl.create_sheet(title=f'{_i}R')
     xl.remove(xl.worksheets[0]) #空のsheet1を削除(元からつくりたくないけど)
-
-    for rn in range(race_number,13):
+    for rn in range(race_number_start,race_number_end+1):
         excel = Excel() #ページ毎に初期化
         xs = xl.active
         xs = xl[f'{rn}R']    #シート指定
